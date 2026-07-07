@@ -59,6 +59,21 @@ body{background:var(--od);min-height:100vh}
 .admin-crumb{font-size:12px;color:#8aa3b5;margin-bottom:.8rem;cursor:pointer}
 .admin-crumb span{cursor:pointer;text-decoration:underline}
 
+.admin-form-row{margin-bottom:.7rem}
+.admin-form-row label{display:block;font-size:11.5px;color:#8aa3b5;margin-bottom:4px}
+.admin-hint{font-size:11.5px;color:#8aa3b5;margin:.3rem 0 .6rem;line-height:1.5}
+.admin-textarea{width:100%;min-height:80px;border:1.5px solid var(--op);border-radius:10px;padding:10px 12px;font-size:13px;color:#1a2c3d;line-height:1.6;font-family:inherit;margin-bottom:.5rem}
+.admin-textarea.small{min-height:60px}
+.admin-line-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+.admin-theory-row{border:1px solid var(--of);border-radius:10px;padding:10px;margin-bottom:10px}
+.admin-theory-row-head{display:flex;gap:8px;margin-bottom:6px;align-items:center}
+.admin-quiz-card{border:1px solid var(--op);border-radius:10px;padding:12px;margin-bottom:12px;background:var(--of)}
+.admin-quiz-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.admin-quiz-badge{font-size:11px;font-weight:700;color:var(--ol);background:#fff;padding:3px 10px;border-radius:12px}
+.admin-quiz-badge.fill{color:#b8860b}
+.admin-opt-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.admin-opt-n{font-weight:800;color:var(--ol);font-size:13px}
+
 .nav{background:var(--od);border-bottom:1px solid rgba(255,255,255,0.1);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:58px;position:sticky;top:0;z-index:100}
 .nav-logo{display:flex;align-items:center;gap:10px;color:var(--ton);font-size:16px;font-weight:600;cursor:pointer}
 .nav-logo .brush{font-size:20px}
@@ -1383,7 +1398,7 @@ let CP=null, CS=null, CQ=0, ANS=false, CC_CNT=0, FCI=0;
 let currentUser='';
 let PROG={}; // {workId:{done:bool,best:pct}}
 let PARTS=[]; // populated from DEFAULT_PARTS or shared override in initContent()
-const ADMIN_PASSWORD = '23456789!@#';
+const ADMIN_PASSWORD = '123456789!@#';
 let isAdmin=false;
 let ADMIN_CUR_PART=null, ADMIN_CUR_WORK=null;
 
@@ -1629,55 +1644,162 @@ function adminAddWork(){
   saveContent().then(ok=>{ openAdminWork(id); adminMsg(ok?'새 작품이 추가되었습니다. 아래에서 내용을 편집해 주세요.':'저장 실패', ok); });
 }
 
-// ── content management: JSON editor for one work ──
+// ── content management: form editor for one work ──
+let ADMIN_DRAFT=null;
+
 function openAdminWork(workId){
   ADMIN_CUR_WORK=ADMIN_CUR_PART.works.find(w=>w.id===workId);
-  renderAdminWorkEditor();
+  ADMIN_DRAFT=JSON.parse(JSON.stringify(ADMIN_CUR_WORK));
+  if(!ADMIN_DRAFT.lines) ADMIN_DRAFT.lines=[];
+  if(!ADMIN_DRAFT.theory) ADMIN_DRAFT.theory=[];
+  if(!ADMIN_DRAFT.keys) ADMIN_DRAFT.keys=[];
+  if(!ADMIN_DRAFT.quiz) ADMIN_DRAFT.quiz=[];
+  renderAdminWorkForm();
 }
-function renderAdminWorkEditor(){
-  const w=ADMIN_CUR_WORK, p=ADMIN_CUR_PART;
+
+function renderAdminWorkForm(){
+  const p=ADMIN_CUR_PART, w=ADMIN_DRAFT;
   const body=document.getElementById('adminBody');
-  const json=JSON.stringify(w,null,2);
   body.innerHTML=`
-    <div class="admin-crumb"><span onclick="renderAdminContentPartList()">전체 갈래</span> › <span onclick="renderAdminWorkList()">${p.title}</span> › ${w.title}</div>
+    <div class="admin-crumb"><span onclick="renderAdminContentPartList()">전체 갈래</span> › <span onclick="renderAdminWorkList()">${p.title}</span> › ${ADMIN_CUR_WORK.title}</div>
     <div class="admin-section admin-editor">
-      <div class="admin-h">${w.title} — 내용·문제 편집 (JSON)</div>
-      <p style="font-size:12px;color:#8aa3b5;margin-bottom:.6rem">
-        title/desc/hanja/lines(원문)/story(배경설화)/theory(해설, h=제목·b=HTML 본문)/keys(핵심정리 목록)/quiz(mc는 opts+ans(정답 인덱스 0부터)+exp, fill은 blank+exp) 형식의 JSON입니다. 수정 후 저장을 누르세요.
-      </p>
-      <textarea id="workJsonArea" spellcheck="false">${json.replace(/</g,'&lt;')}</textarea>
+      <div class="admin-h">기본 정보</div>
+      <div class="admin-form-row"><label>작품 id (변경 불가)</label><input class="admin-inline-input" value="${esc(w.id)}" disabled></div>
+      <div class="admin-form-row"><label>제목</label><input class="admin-inline-input" id="f_title" value="${esc(w.title)}" oninput="ADMIN_DRAFT.title=this.value"></div>
+      <div class="admin-form-row"><label>한자 표기 (선택)</label><input class="admin-inline-input" id="f_hanja" value="${esc(w.hanja||'')}" oninput="ADMIN_DRAFT.hanja=this.value"></div>
+      <div class="admin-form-row"><label>한 줄 설명</label><input class="admin-inline-input" id="f_desc" value="${esc(w.desc||'')}" oninput="ADMIN_DRAFT.desc=this.value"></div>
+    </div>
+
+    <div class="admin-section admin-editor">
+      <div class="admin-h">원문 (원문 한 줄씩 · 독음 · 해석)</div>
+      <div id="linesEditor"></div>
+      <div class="admin-editor-actions"><button class="admin-btn secondary small" onclick="addLineRow()">+ 원문 줄 추가</button></div>
+    </div>
+
+    <div class="admin-section admin-editor">
+      <div class="admin-h">배경설화 / 참고 (선택)</div>
+      <div class="admin-form-row"><label>표시 이름 (기본: 배경설화)</label><input class="admin-inline-input" id="f_storyLabel" value="${esc(w.storyLabel||'')}" oninput="ADMIN_DRAFT.storyLabel=this.value" placeholder="배경설화"></div>
+      <textarea class="admin-textarea" id="f_story" oninput="ADMIN_DRAFT.story=this.value" placeholder="배경설화나 참고 내용을 입력하세요 (없으면 비워두세요)">${esc(w.story||'')}</textarea>
+    </div>
+
+    <div class="admin-section admin-editor">
+      <div class="admin-h">해설 (항목별 제목 + 내용)</div>
+      <p class="admin-hint">내용 칸에 <b>&lt;b&gt;굵게&lt;/b&gt;</b>, <b>&lt;ul&gt;&lt;li&gt;목록&lt;/li&gt;&lt;/ul&gt;</b> 같은 간단한 HTML 태그를 써서 꾸밀 수 있어요. 그냥 줄글로만 써도 됩니다.</p>
+      <div id="theoryEditor"></div>
+      <div class="admin-editor-actions"><button class="admin-btn secondary small" onclick="addTheoryRow()">+ 해설 항목 추가</button></div>
+    </div>
+
+    <div class="admin-section admin-editor">
+      <div class="admin-h">핵심 정리 (한 줄에 하나씩)</div>
+      <textarea class="admin-textarea" id="f_keys" oninput="ADMIN_DRAFT.keys=this.value.split('\\n').filter(x=>x.trim())" placeholder="핵심 정리 문장을 한 줄에 하나씩 입력하세요">${esc((w.keys||[]).join('\n'))}</textarea>
+    </div>
+
+    <div class="admin-section admin-editor">
+      <div class="admin-h">문제 (객관식 · 빈칸 채우기)</div>
+      <div id="quizEditor"></div>
       <div class="admin-editor-actions">
-        <button class="admin-btn" onclick="saveAdminWorkJson()">저장</button>
-        <button class="admin-btn secondary" onclick="renderAdminWorkEditor()">되돌리기</button>
+        <button class="admin-btn secondary small" onclick="addQuizRow('mc')">+ 객관식 문제 추가</button>
+        <button class="admin-btn secondary small" onclick="addQuizRow('fill')">+ 빈칸 문제 추가</button>
+      </div>
+    </div>
+
+    <div class="admin-section">
+      <div class="admin-editor-actions">
+        <button class="admin-btn" onclick="saveAdminWorkForm()">저장</button>
+        <button class="admin-btn secondary" onclick="openAdminWork('${w.id}')">변경 취소(되돌리기)</button>
         <button class="admin-btn danger" onclick="adminDeleteWork('${w.id}')">이 작품 삭제</button>
       </div>
       <div class="admin-msg" id="adminMsg"></div>
     </div>`;
+  renderLinesEditor(); renderTheoryEditor(); renderQuizEditor();
 }
-async function saveAdminWorkJson(){
-  const ta=document.getElementById('workJsonArea');
-  let parsed;
-  try{ parsed=JSON.parse(ta.value); }
-  catch(e){ adminMsg('JSON 형식이 올바르지 않습니다: '+e.message, false); return; }
-  if(!parsed.id||!parsed.title||!Array.isArray(parsed.quiz)){
-    adminMsg('id, title, quiz(배열)는 반드시 있어야 합니다.', false); return;
-  }
-  for(const q of parsed.quiz){
-    if(q.type==='mc' && (!Array.isArray(q.opts) || typeof q.ans!=='number')){
-      adminMsg('객관식 문제는 opts(배열)와 ans(정답 인덱스 숫자)가 필요합니다.', false); return;
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escArea(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// -- 원문 줄 --
+function renderLinesEditor(){
+  const c=document.getElementById('linesEditor');
+  c.innerHTML=(ADMIN_DRAFT.lines||[]).map((l,i)=>`
+    <div class="admin-line-row">
+      <input class="admin-inline-input" style="flex:1.3" placeholder="원문" value="${esc(l.h)}" oninput="ADMIN_DRAFT.lines[${i}].h=this.value">
+      <input class="admin-inline-input" style="flex:.8" placeholder="독음(선택)" value="${esc(l.r)}" oninput="ADMIN_DRAFT.lines[${i}].r=this.value">
+      <input class="admin-inline-input" style="flex:1.3" placeholder="해석" value="${esc(l.k)}" oninput="ADMIN_DRAFT.lines[${i}].k=this.value">
+      <button class="admin-btn danger small" onclick="removeLineRow(${i})">삭제</button>
+    </div>`).join('') || '<p class="admin-hint">아직 원문 줄이 없습니다. 아래 버튼으로 추가하세요.</p>';
+}
+function addLineRow(){ ADMIN_DRAFT.lines.push({h:'',r:'',k:''}); renderLinesEditor(); }
+function removeLineRow(i){ ADMIN_DRAFT.lines.splice(i,1); renderLinesEditor(); }
+
+// -- 해설 항목 --
+function renderTheoryEditor(){
+  const c=document.getElementById('theoryEditor');
+  c.innerHTML=(ADMIN_DRAFT.theory||[]).map((t,i)=>`
+    <div class="admin-theory-row">
+      <div class="admin-theory-row-head">
+        <input class="admin-inline-input" style="flex:1" placeholder="항목 제목 (예: 구성, 주제)" value="${esc(t.h)}" oninput="ADMIN_DRAFT.theory[${i}].h=this.value">
+        <button class="admin-btn danger small" onclick="removeTheoryRow(${i})">삭제</button>
+      </div>
+      <textarea class="admin-textarea small" placeholder="내용" oninput="ADMIN_DRAFT.theory[${i}].b=this.value">${escArea(t.b)}</textarea>
+    </div>`).join('') || '<p class="admin-hint">아직 해설 항목이 없습니다.</p>';
+}
+function addTheoryRow(){ ADMIN_DRAFT.theory.push({h:'',b:''}); renderTheoryEditor(); }
+function removeTheoryRow(i){ ADMIN_DRAFT.theory.splice(i,1); renderTheoryEditor(); }
+
+// -- 문제 --
+function renderQuizEditor(){
+  const c=document.getElementById('quizEditor');
+  c.innerHTML=(ADMIN_DRAFT.quiz||[]).map((q,i)=>{
+    if(q.type==='mc'){
+      const opts=q.opts&&q.opts.length===4?q.opts:['','','',''];
+      const optsRows=opts.map((o,oi)=>`
+        <div class="admin-opt-row">
+          <input type="radio" name="ans_${i}" ${q.ans===oi?'checked':''} onchange="ADMIN_DRAFT.quiz[${i}].ans=${oi}">
+          <span class="admin-opt-n">${['①','②','③','④'][oi]}</span>
+          <input class="admin-inline-input" placeholder="보기 ${oi+1}" value="${esc(o)}" oninput="ADMIN_DRAFT.quiz[${i}].opts[${oi}]=this.value">
+        </div>`).join('');
+      return `<div class="admin-quiz-card">
+        <div class="admin-quiz-head"><span class="admin-quiz-badge">객관식 ${i+1}</span><button class="admin-btn danger small" onclick="removeQuizRow(${i})">삭제</button></div>
+        <textarea class="admin-textarea small" placeholder="문제" oninput="ADMIN_DRAFT.quiz[${i}].q=this.value">${escArea(q.q)}</textarea>
+        <div class="admin-hint">정답인 보기 앞의 동그라미를 선택하세요.</div>
+        ${optsRows}
+        <textarea class="admin-textarea small" placeholder="정답 해설" oninput="ADMIN_DRAFT.quiz[${i}].exp=this.value">${escArea(q.exp)}</textarea>
+      </div>`;
+    } else {
+      return `<div class="admin-quiz-card">
+        <div class="admin-quiz-head"><span class="admin-quiz-badge fill">빈칸 ${i+1}</span><button class="admin-btn danger small" onclick="removeQuizRow(${i})">삭제</button></div>
+        <textarea class="admin-textarea small" placeholder="문제 (빈칸 자리에 ___ 를 넣어주세요)" oninput="ADMIN_DRAFT.quiz[${i}].q=this.value">${escArea(q.q)}</textarea>
+        <input class="admin-inline-input" placeholder="정답" value="${esc(q.blank)}" oninput="ADMIN_DRAFT.quiz[${i}].blank=this.value">
+        <input class="admin-inline-input" placeholder="정답으로 함께 인정할 표현(쉼표로 구분, 선택)" value="${esc((q.altBlanks||[]).join(', '))}" oninput="ADMIN_DRAFT.quiz[${i}].altBlanks=this.value.split(',').map(x=>x.trim()).filter(x=>x)">
+        <textarea class="admin-textarea small" placeholder="정답 해설" oninput="ADMIN_DRAFT.quiz[${i}].exp=this.value">${escArea(q.exp)}</textarea>
+      </div>`;
     }
-    if(q.type==='fill' && !q.blank){
-      adminMsg('빈칸 문제는 blank(정답)이 필요합니다.', false); return;
+  }).join('') || '<p class="admin-hint">아직 문제가 없습니다. 아래 버튼으로 추가하세요.</p>';
+}
+function addQuizRow(type){
+  if(type==='mc') ADMIN_DRAFT.quiz.push({type:'mc',q:'',opts:['','','',''],ans:0,exp:''});
+  else ADMIN_DRAFT.quiz.push({type:'fill',q:'',blank:'',exp:''});
+  renderQuizEditor();
+}
+function removeQuizRow(i){ ADMIN_DRAFT.quiz.splice(i,1); renderQuizEditor(); }
+
+async function saveAdminWorkForm(){
+  const w=ADMIN_DRAFT;
+  if(!w.title||!w.title.trim()){ adminMsg('제목을 입력해 주세요.', false); return; }
+  if(!w.quiz||w.quiz.length===0){ adminMsg('문제를 최소 1개 이상 추가해 주세요.', false); return; }
+  for(let i=0;i<w.quiz.length;i++){
+    const q=w.quiz[i];
+    if(!q.q||!q.q.trim()){ adminMsg(`문제 ${i+1}번의 질문을 입력해 주세요.`, false); return; }
+    if(q.type==='mc'){
+      if(!q.opts||q.opts.some(o=>!o||!o.trim())){ adminMsg(`객관식 문제 ${i+1}번의 보기를 모두 입력해 주세요.`, false); return; }
+    } else {
+      if(!q.blank||!q.blank.trim()){ adminMsg(`빈칸 문제 ${i+1}번의 정답을 입력해 주세요.`, false); return; }
     }
   }
   const idx=ADMIN_CUR_PART.works.findIndex(x=>x.id===ADMIN_CUR_WORK.id);
-  if(parsed.id!==ADMIN_CUR_WORK.id && ADMIN_CUR_PART.works.some(w=>w.id===parsed.id)){
-    adminMsg('이미 존재하는 id로는 변경할 수 없습니다.', false); return;
-  }
-  ADMIN_CUR_PART.works[idx]=parsed;
-  ADMIN_CUR_WORK=parsed;
+  ADMIN_CUR_PART.works[idx]=JSON.parse(JSON.stringify(w));
+  ADMIN_CUR_WORK=ADMIN_CUR_PART.works[idx];
   const ok=await saveContent();
-  if(ok) renderAdminWorkEditor();
+  if(ok) renderAdminWorkForm();
   adminMsg(ok?'저장되었습니다.':'저장에 실패했습니다.', ok);
 }
 
